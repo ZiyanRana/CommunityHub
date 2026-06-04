@@ -1,5 +1,6 @@
 import express from 'express';
-import { register, login, logout } from '../controllers/auth.controller.js';
+import { register, login, logout, logoutAll, refreshTokens, getOtp, verifyOtp } from '../controllers/auth.controller.js';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 const authRouter = express.Router();
 
@@ -7,3 +8,9 @@ const authRouter = express.Router();
 authRouter.post('/register', register);
 authRouter.post('/login', login);
 authRouter.post('/logout', logout);
+authRouter.post('/logout-all', logoutAll);
+authRouter.get('/refresh-token', authMiddleware, refreshTokens);
+authRouter.get('/get-otp', getOtp);
+authRouter.post('/verify-otp', verifyOtp);
+
+export default authRouter;
