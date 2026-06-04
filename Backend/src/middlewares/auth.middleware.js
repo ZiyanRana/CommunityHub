@@ -18,6 +18,7 @@ export const authMiddleware = async (req, res, next) => {
         }
 
         req.user = user;
+        req.refreshToken = refreshToken;
         return next();
     }
     catch (error) {
