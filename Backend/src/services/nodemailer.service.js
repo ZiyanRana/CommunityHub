@@ -12,8 +12,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// eslint-disable-next-line no-unused-vars
-transporter.verify( (error, success) => {
+transporter.verify( (error) => {
     if (error) {
         console.error('Error connecting to email server:', error);
     }
