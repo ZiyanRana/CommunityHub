@@ -14,5 +14,6 @@ export const {
     GOOGLE_EMAIL,
     CLIENT_ID,
     CLIENT_SECRET,
-    GOOGLE_REFRESH_TOKEN
+    GOOGLE_REFRESH_TOKEN,
+    IMAGE_KIT_KEY
 } = process.env;
