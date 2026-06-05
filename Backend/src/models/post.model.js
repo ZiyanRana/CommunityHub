@@ -1,32 +1,65 @@
 import mongoose from 'mongoose';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime.js';
+dayjs.extend(relativeTime);
 
 const postSchema = new mongoose.Schema({
     title: {
         type: String,
-        required: [true, 'Post title is required!'],
-        minlength: [5, 'Post title must be at least 5 characters long!'],
-        maxlength: [50, 'Post title cannot exceed 50 characters!']
+        default: ""
     },
     caption: {
         type: String,
-        default: 'No Caption'
+        default: ""
     },
     creator: {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         required: [true, 'Post creator is required!']
     },
     tags: {
         type: [String],
         default: []
     },
-    postFile: {
+    fileUrl: {
         type: String,
+        required: [true, 'Post file is required!']
     },
     likeCount: {
         type: Number,
         default: 0
+    },
+    commentCount: {
+        type: Number,
+        default: 0
+    },
+    isEdited: {
+        type: Boolean,
+        default: false
+    },
+    location: {
+        type: String,
+        default: ""
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true } 
+});
+
+postSchema.index( { createdAt: -1 } );
+postSchema.index( { creator: 1, createdAt: -1 } );
+
+postSchema.index({
+    title: 'text',
+    caption: 'text',
+    tags: 'text',
+    location: 'text'
+});
+
+postSchema.virtual('postedTimeAgo').get(function () {
+    return dayjs(this.createdAt).fromNow();
+});
 
 const postModel = mongoose.model('Post', postSchema);
 
