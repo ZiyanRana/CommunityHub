@@ -1,5 +1,5 @@
 import express from 'express';
-import { getPosts, createPost, getPost, editPost, deletePost, likePost, unlikePost } from '../controllers/post.controller.js';
+import { getPosts, createPost, getPost, editPost, deletePost } from '../controllers/post.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 const postRouter = express.Router();
@@ -10,7 +10,5 @@ postRouter.post('/', authMiddleware, createPost);
 postRouter.get('/:id', authMiddleware, getPost);
 postRouter.patch('/:id', authMiddleware, editPost);
 postRouter.delete('/:id', authMiddleware, deletePost);
-postRouter.patch('/:id/like-post', authMiddleware, likePost);
-postRouter.patch('/:id/unlike-post', authMiddleware, unlikePost);
 
 export default postRouter;
