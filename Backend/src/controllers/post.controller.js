@@ -47,8 +47,16 @@ export const getPosts = async (req, res) => {
     try {
         const { page, limit, skip } = paginationValues(req.query);
 
-        const [posts, totalPosts] = await Promise.all([postModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit), postModel.countDocuments()]);
+        const [posts, totalPosts] = await Promise.all([postModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), postModel.countDocuments()]);
         
+        if (totalPosts === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'There are no posts yet!',
+                posts: []
+            });
+        }
+
         const totalPages = Math.ceil( totalPosts / limit );
 
         if (page > totalPages) {
@@ -57,13 +65,6 @@ export const getPosts = async (req, res) => {
                 message: 'Page not found!',
                 currentPage: page,
                 totalPages
-            });
-        }
-        if (page === 1 && posts.length === 0) {
-            return res.status(200).json({
-                success: true,
-                message: 'No posts yet!',
-                posts
             });
         }
 
@@ -111,6 +112,61 @@ export const getPost = async (req, res) => {
     catch (error) {
         console.error('Error fetching post:', error);
         return res.status(500).json({ success: false, message: 'Error fetching post, please try again!' });
+    }
+}
+
+export const searchPosts = async (req, res) => {
+    const  query  = req.query.query?.trim();
+    const { page, limit, skip } = paginationValues(req.query);
+
+    if (!query) {
+        return res.status(400).json({ success: false, message: 'Search query is required!'});
+    }
+    if (query.length < 3 || query.length > 50) {
+        return res.status(400).json({ success: false, message: 'Search query must be between 3 and 50 characters!'});
+    }
+
+    const safeQuery = query.replace(/[<>&]/g, '');
+    const textSearch = { $text: { $search: safeQuery } };
+
+    try {
+        const [posts, totalPosts] = await Promise.all([postModel.find(textSearch, { score: { $meta: 'textScore' } }).sort({ score: { $meta: 'textScore' }, createdAt: -1 }).skip(skip).limit(limit).lean(), postModel.countDocuments(textSearch)]);
+
+        if (totalPosts === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'There are no posts with the provided query!',
+                posts: []
+            });
+        }
+
+        const totalPages = Math.ceil( totalPosts / limit );
+
+        if (page > totalPages) {
+            return res.status(404).json({
+                success: false,
+                message: 'Page not found!',
+                currentPage: page,
+                totalPages
+            });
+        }
+
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Posts fetched successfully', 
+            posts,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalPosts,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error searching posts:', error);
+        return res.status(500).json({ success: false, message: 'Error searching posts, please try again!' });
     }
 }
 
