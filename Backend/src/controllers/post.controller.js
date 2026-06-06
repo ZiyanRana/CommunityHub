@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import postModel from "../models/post.model.js";
 import { getImageUrl, getVideoUrl, deleteFile } from "../services/imageKit.service.js";
+import paginationValues from '../utils/pagination.utils.js';
 
 
 export const createPost = async (req, res) => {
@@ -44,12 +45,39 @@ export const createPost = async (req, res) => {
 
 export const getPosts = async (req, res) => {
     try {
-        const posts = await postModel.find().limit(20).sort({ createdAt: -1 });
+        const { page, limit, skip } = paginationValues(req.query);
+
+        const [posts, totalPosts] = await Promise.all([postModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit), postModel.countDocuments()]);
+        
+        const totalPages = Math.ceil( totalPosts / limit );
+
+        if (page > totalPages) {
+            return res.status(404).json({
+                success: false,
+                message: 'Page not found!',
+                currentPage: page,
+                totalPages
+            });
+        }
+        if (page === 1 && posts.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'No posts yet!',
+                posts
+            });
+        }
 
         return res.status(200).json({
             success: true,
             message: 'Posts fetched successfully',
-            posts
+            posts,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalPosts,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            }
         });
     } 
     catch (error) {
@@ -167,55 +195,5 @@ export const deletePost = async (req, res) => {
     catch (error) {
         console.error('Error deleting post:', error);
         return res.status(500).json({ success: false, message: 'Error deleting post, please try again!' });
-    }
-}
-
-export const likePost = async (req, res) => {
-    const { id } = req.params;
-
-    if (!id) {
-        return res.status(400).json({ success: false, message: 'Could not find post id, please try again!' });
-    }
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ success: false, message: 'Invalid post id, please try again!' });
-    }
-
-    try {
-        const likedPost = await postModel.findByIdAndUpdate(id, { $inc: { likeCount: 1 } }, { new: true });
-
-        if (!likedPost) {
-            return res.status(404).json({ success: false, message: 'Post not found!' });
-        }
-
-        return res.status(200).json({ success: true, message: 'Post liked successfully', post: likedPost });
-    }
-    catch (error) {
-        console.error('Error liking the post:', error);
-        return res.status(500).json({ success: false, message: 'Error liking post, please try again!' });
-    }
-}
-
-export const unlikePost = async (req, res) => {
-    const { id } = req.params;
-
-    if (!id) {
-        return res.status(400).json({ success: false, message: 'Could not find post id, please try again!' });
-    }
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ success: false, message: 'Invalid post id, please try again!' });
-    }
-
-    try {
-        const unlikedPost = await postModel.findByIdAndUpdate(id, { $dec: { likeCount: 1 } }, { new: true });
-
-        if (!unlikedPost) {
-            return res.status(404).json({ success: false, message: 'Post not found!' });
-        }
-
-        return res.status(200).json({ success: true, message: 'Post unliked successfully', post: unlikedPost });
-    }
-    catch (error) {
-        console.error('Error unliking the post:', error);
-        return res.status(500).json({ success: false, message: 'Error liking post, please try again!' });
     }
 }

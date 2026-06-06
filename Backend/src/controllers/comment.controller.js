@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import postModel from "../models/post.model.js";
 import commentModel from "../models/comment.model.js";
+import paginationValues from '../utils/pagination.utils.js';
 
 export const commentOnPost = async (req, res) => {
     const { id } = req.params;
@@ -106,6 +107,7 @@ export const deleteComment = async(req, res) => {
 
 export const getPostComments = async (req, res) => {
     const { id } = req.params;
+    const { page, limit, skip } = paginationValues(req.query);
 
     if (!id) {
         return res.status(400).json({ success: false, message: 'Could not find post id, please try again!' });
@@ -121,9 +123,39 @@ export const getPostComments = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Post not found!' });
         }
 
-        const comments = await commentModel.find({ post: id }).sort({ createdAt: -1 }).limit(20);
+        const [comments, totalComments] = await Promise.all([commentModel.find({ post: id }).sort({ createdAt: -1 }).skip(skip).limit(limit), commentModel.countDocuments({ post: id })]);
 
-        return res.status(200).json({ success: true, message: 'Post comments fetched successfully', comments });
+        const totalPages = Math.ceil( totalComments / limit );
+
+        if (page > totalPages) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Page not found!',
+                currentPage: page,
+                totalPages
+            });
+        }
+        if (page === 1 && comments.length === 0) {
+            return res.status(200).json({ 
+                success: true, 
+                message: 'No comments yet!' ,
+                post,
+                comments
+            });
+        }
+
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Post comments fetched successfully', 
+            comments,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalComments,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1
+            } 
+        });
     }
     catch (error) {
         console.error('Error fetching post comments:', error);
