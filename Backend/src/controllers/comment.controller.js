@@ -123,7 +123,15 @@ export const getPostComments = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Post not found!' });
         }
 
-        const [comments, totalComments] = await Promise.all([commentModel.find({ post: id }).sort({ createdAt: -1 }).skip(skip).limit(limit), commentModel.countDocuments({ post: id })]);
+        const [comments, totalComments] = await Promise.all([commentModel.find({ post: id }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), commentModel.countDocuments({ post: id })]);
+
+        if (totalComments === 0) {
+            return res.status(200).json({ 
+                success: true, 
+                message: 'There are no comments on this post yet!', 
+                comments: []
+            });
+        }
 
         const totalPages = Math.ceil( totalComments / limit );
 
@@ -133,14 +141,6 @@ export const getPostComments = async (req, res) => {
                 message: 'Page not found!',
                 currentPage: page,
                 totalPages
-            });
-        }
-        if (page === 1 && comments.length === 0) {
-            return res.status(200).json({ 
-                success: true, 
-                message: 'No comments yet!' ,
-                post,
-                comments
             });
         }
 
