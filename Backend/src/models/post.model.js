@@ -20,6 +20,7 @@ const postSchema = new mongoose.Schema({
     tags: {
         type: [String],
         trim: true,
+        lowercase: [true, 'Tags must be in lowercase!'],
         default: []
     },
     fileUrl: {
@@ -49,7 +50,9 @@ const postSchema = new mongoose.Schema({
 });
 
 postSchema.index( { createdAt: -1 } );
-postSchema.index( { creator: 1, createdAt: -1 } );
+postSchema.index({ creator: 1, createdAt: -1 });
+postSchema.index({ tags: 1 });
+postSchema.index({ location: 1 });
 
 postSchema.index({
     title: 'text',
