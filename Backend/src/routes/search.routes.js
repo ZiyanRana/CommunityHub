@@ -1,5 +1,10 @@
 import express from 'express';
-import { searchPostsGeneric, searchPostsByTags, searchPostsByLocation, searchAccounts } from '../controllers/search.controller.js';
+import {
+    searchPostsGeneric,
+    searchPostsByTags,
+    searchPostsByLocation,
+    searchAccounts
+} from '../controllers/search.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 const searchRouter = express.Router();
