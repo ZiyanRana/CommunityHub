@@ -209,6 +209,10 @@ export const editPost = async (req, res) => {
             });
         }
 
+        if (post.creator.toString() !== req.user.toString()) {
+            return res.status(403).json({ success: false, message: 'The post is not yours, you are not authorized to edit it!' });
+        }
+
         if (!title && !caption && !tags && !location && !file) {
             return res.status(400).json({ success: false, message: 'Nothing updated by the user!' });
         }
@@ -216,9 +220,9 @@ export const editPost = async (req, res) => {
         if (file && file !== post.fileUrl) {
             let fileUrl = '';
 
-            if (file.mimeType.startsWith('image/')) {
+            if (file.mimetype.startsWith('image/')) {
                 fileUrl = await getImageUrl(file);
-            } else if (file.mimeType.startsWith('video/')) {
+            } else if (file.mimetype.startsWith('video/')) {
                 fileUrl = await getVideoUrl(file);
             } else {
                 return res.status(400).json({
@@ -273,6 +277,10 @@ export const deletePost = async (req, res) => {
         const post = await postModel.findById(id);
         if (!post) {
             return res.status(404).json({ success: false, message: 'Post not found!' });
+        }
+
+        if (post.creator.toString() !== req.user.toString()) {
+            return res.status(403).json({ success: false, message : 'The post is not yours, you are not authorized to delete it!'})
         }
 
         await deleteFile(post.fileUrl);
