@@ -27,6 +27,27 @@ const userSchema = new mongoose.Schema({
     verified: {
         type: Boolean,
         default: false
+    },
+    profilePhoto: {
+        type: String,
+        default: ''
+    },
+    bio: {
+        type: String,
+        maxLength: [150, 'Bio cannot exceed 150 characters!'],
+        default: ''
+    },
+    isPrivate: {
+        type: Boolean,
+        default: false
+    },
+    followersCount: {
+        type: Number,
+        default: 0
+    },
+    followingCount: {
+        type: Number,
+        default: 0
     }
 }, { timestamps: true });
 
