@@ -12,7 +12,7 @@ export const register = async (req, res) => {
 
     if (!username || !email || !password) {
         return res.status(400).json({ success: false, message: 'Some required fields are missing!' });
-    } 
+    }
 
     try {
         const existingUser = await userModel.findOne({ $or: [{ username }, { email }] });
@@ -22,25 +22,28 @@ export const register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-
         const newUser = await userModel.create({ username, email, password: hashedPassword });
 
-        const to = email;
+        try {
+            const otp = generateOTP();
+            await sendOtpEmail(email, otp);
 
-        const otp = generateOTP();
-        await sendOtpEmail(to, otp);
+            const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
 
-        const otpHash = await crypto.createHash('sha256').update(otp).digest('hex');
+            await otpModel.create({
+                user: newUser._id,
+                email,
+                otp: otpHash,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+            });
+        } catch (error) {
+            await userModel.deleteOne({ _id: newUser._id });
+            console.error('Error sending OTP email:', error);
+            return res.status(500).json({ success: false, message: 'An error occurred while sending the OTP email, please try again!' });
+        }
 
-        await otpModel.create({
-            user: newUser._id,
-            email,
-            otp: otpHash,
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000)
-        });
-
-        return res.status(201).json({ success: true, message: 'User added and OTP is sent successfully, use it to verify your account!', user: newUser });
-    } 
+        return res.status(201).json({ success: true, message: 'User added and OTP is sent successfully, use it to verify your account!' });
+    }
     catch (error) {
         console.error('Error registering user:', error);
         return res.status(500).json({ success: false, message: 'An error occurred while registering the user, please try again!' });
