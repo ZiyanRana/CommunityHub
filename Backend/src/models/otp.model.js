@@ -12,8 +12,7 @@ const otpSchema = new mongoose.Schema({
     },
     otp: {
         type: String,
-        required: [true, 'OTP is required!'],
-        match: [/^\d{6}$/, 'OTP must be exactly 6 digits!']
+        required: [true, 'OTP is required!']
     },
     expiresAt: {
         type: Date,
