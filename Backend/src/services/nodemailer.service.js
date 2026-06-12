@@ -12,11 +12,10 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-transporter.verify( (error) => {
+transporter.verify((error) => {
     if (error) {
         console.error('Error connecting to email server:', error);
-    }
-    else {
+    } else {
         console.log('Email server is ready to send messages!');
     }
 });
@@ -32,9 +31,7 @@ export const sendEmail = async (to, subject, text, html) => {
         });
 
         console.log('Email sent: %s', info.messageId);
-        console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error sending email:', error);
     }
-}
+};
