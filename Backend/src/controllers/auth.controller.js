@@ -4,7 +4,7 @@ import sessionModel from '../models/session.model.js';
 import { generateOTP, sendOtpEmail } from '../utils/otp.utils.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { JWT_SECRET, REFRESH_TOKEN_EXPIRES_IN, ACCESS_TOKEN_EXPIRES_IN, COOKIE_EXPIRES_IN_DAYS, NODE_ENV } from '../config/env.js';
+import { JWT_SECRET, REFRESH_TOKEN_EXPIRES_IN, ACCESS_TOKEN_EXPIRES_IN, COOKIE_EXPIRES_IN_DAYS, NODE_ENV, OTP_EXPIRES_IN_MINUTES } from '../config/env.js';
 import jwt from 'jsonwebtoken';
 
 export const register = async (req, res) => {
@@ -34,7 +34,8 @@ export const register = async (req, res) => {
                 user: newUser._id,
                 email,
                 otp: otpHash,
-                expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+                purpose: 'verify',
+                expiresAt: new Date(Date.now() + Number(OTP_EXPIRES_IN_MINUTES) * 60 * 1000)
             });
         } catch (error) {
             await userModel.deleteOne({ _id: newUser._id });
@@ -113,16 +114,9 @@ export const login = async (req, res) => {
 }
 
 export const logout = async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-
-    if (!refreshToken) {
-        return res.status(400).json({ success: false, message: 'No user is currently signed in!' });
-    }
+    const refreshToken = req.refreshToken;
 
     try {
-        // eslint-disable-next-line no-unused-vars
-        const decoded = jwt.verify(refreshToken, JWT_SECRET);
-
         const refreshTokenHash = await crypto.createHash('sha256').update(refreshToken).digest('hex');
 
         const session = await sessionModel.findOne({ refreshToken: refreshTokenHash, revoked: false });
@@ -150,16 +144,11 @@ export const logout = async (req, res) => {
 }
 
 export const logoutAll = async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-
-    if (!refreshToken) {
-        return res.status(400).json({ success: false, message: 'No user with the provided token is currently signed in!' });
-    }
-
+    const user = req.user;
+    
     try {
-        const decoded = jwt.verify(refreshToken, JWT_SECRET);
         const sessions = await sessionModel.find(
-            { user: decoded.userId, revoked: false }
+            { user: user._id, revoked: false }
         );
 
         if (sessions.length === 0) {
@@ -167,7 +156,7 @@ export const logoutAll = async (req, res) => {
         }
 
         await sessionModel.updateMany(
-            { user: decoded.userId, revoked: false },
+            { user: user._id, revoked: false },
             { revoked: true }
         );
 
@@ -186,85 +175,110 @@ export const logoutAll = async (req, res) => {
     }
 }
 
-export const getOtp = async (req, res) => {
+export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-        return res.status(400).json({ success: false, message: 'User email is required to send the otp!' });
+        return res.status(400).json({ success: false, message: 'User email is required to reset the password!' });
     }
 
     try {
         const user = await userModel.findOne({ email });
 
         if (!user) {
-            return res.status(400).json({ success: false, message: 'Cannot proceed, user with the provided email does not exist!' });
+            return res
+                .status(400)
+                .json({ success: false, message: 'Cannot proceed, user with the provided email does not exist!' });
         }
 
-        if (user.verified) {
-            return res.status(400).json({ success: false, message: 'User already verified, no need for otp!' });
-        }
+        await otpModel.deleteMany({ email, purpose: 'reset' });
 
         const otp = generateOTP();
         const otpHash = await crypto.createHash('sha256').update(otp).digest('hex');
-
-        await sendOtpEmail(email, otp);
 
         await otpModel.create({
             user: user._id,
             email,
             otp: otpHash,
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000)
+            purpose: 'reset',
+            expiresAt: new Date(Date.now() + Number(OTP_EXPIRES_IN_MINUTES) * 60 * 1000)
         });
 
-        return res.status(200).json({
-            success: true,
-            message: 'OTP sent successfully!',
-            otp: otpHash
-        });
-    }
-    catch (error) {
-        console.error('Error sending otp:', error);
-        return res.status(500).json({ success: false, message: 'An error occurred while sending the otp, please try again!' });
+        try {
+            await sendOtpEmail(email, otp);
+        }
+        catch (error) {
+            await otpModel.deleteMany({ email, purpose: 'reset' });
+            console.error('Error sending email:', error);
+            return res.status(500).json({ success: false, message: 'An error occurred while sending the OTP email, please try again!' });
+        }
+
+        return res.status(200).json({ success: true, message: 'OTP to reset password has been sent successfully!' });
+    } catch (error) {
+        console.error('Error in forgot password:', error);
+        return res.status(500).json({ success: false, message: 'An error occurred, please try again!' });
     }
 }
 
-export const verifyOtp = async (req, res) => {
-    const { email, otp } = req.body;
+export const resetPassword = async (req, res) => {
+    const { email, otp, newPassword } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ success: false, message: 'User email is required to verify the account!' });
-    }
-    if (!otp) {
-        return res.status(400).json({ success: false, message: 'OTP is required to verify the user!' });
+    if (!email || !otp || !newPassword) {
+        return res.status(400).json({ success: false, message: 'User email, OTP and new password are required to reset the password!' });
     }
 
     try {
         const user = await userModel.findOne({ email });
+
         if (!user) {
-            return res.status(400).json({ success: false, message: 'No user with the provided email exists, check your email and try again!'});
+            return res
+                .status(400)
+                .json({ success: false, message: 'Cannot proceed, user with the provided email does not exist!' });
         }
 
         const otpHash = await crypto.createHash('sha256').update(otp).digest('hex');
 
         const isOtpFound = await otpModel.findOne({
             email,
-            otp: otpHash
+            otp: otpHash,
+            purpose: 'reset'
         });
 
         if (!isOtpFound) {
-            return res.status(400).json({ success: false, message: 'Incorrect or expired OTP entered, please try again!' });
+            return res
+                .status(400)
+                .json({ success: false, message: 'Cannot proceed, invalid OTP provided!' });
         }
 
-        user.verified = true;
+        const newPasswordHash = await bcrypt.hash(newPassword, 10);
+        if (newPasswordHash === user.password) {
+            return res.status(400).json({ success: false, message: 'New password cannot be the same as the old password!' });
+        }
+
+        user.password = newPasswordHash;
         await user.save();
 
-        await otpModel.deleteMany({ email });
+        await otpModel.deleteMany({ email, purpose: 'reset' });
 
-        return res.status(200).json({ success: true, message: 'Account verified successfully!' });
+        await sessionModel.updateMany({
+            user: user._id,
+            revoked: false
+        }, {
+            revoked: true
+        });
+
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: NODE_ENV === 'production',
+            sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+            path: '/'
+        });
+
+        return res.status(200).json({ success: true, message: 'Password reset successfully!' });
     }
     catch (error) {
-        console.error('Error verifying otp:', error);
-        return res.status(500).json({ success: false, message: 'An error occurred while verifying the otp, please try again!' });
+        console.error('Error in reset password:', error);
+        return res.status(500).json({ success: false, message: 'An error occurred, please try again!' });
     }
 }
 
