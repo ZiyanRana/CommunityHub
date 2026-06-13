@@ -15,5 +15,6 @@ export const {
     CLIENT_ID,
     CLIENT_SECRET,
     GOOGLE_REFRESH_TOKEN,
-    IMAGE_KIT_KEY
+    IMAGE_KIT_KEY,
+    OTP_EXPIRES_IN_MINUTES
 } = process.env;
