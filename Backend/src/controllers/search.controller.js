@@ -216,6 +216,7 @@ export const searchAccounts = async (req, res) => {
         const [users, totalUsers] = await Promise.all([
             userModel
                 .find({ $text: { $search: query }, score: { $meta: 'textScore' } })
+                .select('username profilePhoto followersCount')
                 .sort({ score: { $meta: 'textScore' }, createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
