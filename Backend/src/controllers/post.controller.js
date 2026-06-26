@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import userModel from '../models/user.model.js';
 import postModel from '../models/post.model.js';
 import { getImageUrl, getVideoUrl, deleteFile } from '../services/imageKit.service.js';
 import paginationValues from '../utils/pagination.utils.js';
@@ -11,10 +12,21 @@ export const createPost = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Post file is required!' });
     }
 
+    const isImage = file.mimetype.startsWith('image/');
+    const isVideo = file.mimetype.startsWith('video/');
+
+    if (!isImage && !isVideo) {
+        return res.status(400).json({ success: false, message: 'Invalid file type, please try again!' });
+    }
+
     const normalizedTags = tags?.map((tag) => tag.trim().toLowerCase().replace(/[<>&]/g, ''));
 
-    if (file.mimetype.startsWith('image/')) {
-        const fileUrl = await getImageUrl(file);
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+        const fileUrl = isImage ? await getImageUrl(file) : await getVideoUrl(file);
+
         const post = await postModel.create({
             title,
             caption,
@@ -22,26 +34,21 @@ export const createPost = async (req, res) => {
             tags: normalizedTags,
             fileUrl,
             location
-        });
+        }, { session });
+            
+        await userModel.findByIdAndUpdate(req.user._id, { $inc: { postsCount: 1 } }, { session });
+        await session.commitTransaction();
 
-        return res.status(201).json({ success: true, message: 'Post created successfully', post });
+        return res.status(201).json({ success: true, message: 'Post created successfully', post: post[0] });
     }
-
-    if (file.mimetype.startsWith('video/')) {
-        const fileUrl = await getVideoUrl(file);
-        const post = await postModel.create({
-            title,
-            caption,
-            creator: req.user._id,
-            tags: normalizedTags,
-            fileUrl,
-            location
-        });
-
-        return res.status(201).json({ success: true, message: 'Post created successfully', post });
+    catch (error) {
+        await session.abortTransaction();
+        console.error('Error creating post:', error);
+        return res.status(500).json({ success: false, message: 'Error creating post, please try again!' });
     }
-
-    return res.status(400).json({ success: false, message: 'Invalid file type, please try again!' });
+    finally {
+        await session.endSession();
+    }
 };
 
 export const getPosts = async (req, res) => {
@@ -127,21 +134,24 @@ export const getPost = async (req, res) => {
 };
 
 export const getSpecificUserPosts = async (req, res) => {
-    const { id: userId } = req.params;
+    const id = req.params;
     const { page, limit, skip } = paginationValues(req.query);
 
-    if (!userId) {
+    if (!id) {
         return res.status(400).json({
             success: false,
             message: 'Could not find user id, please try again!'
         });
     }
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: 'Invalid user id, please try again!' });
     }
 
     try {
-        const [posts, totalPosts] = await Promise.all([postModel.find({ creator: userId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), postModel.countDocuments({ creator: userId })]);
+        const [posts, totalPosts] = await Promise.all([
+            postModel.find({ creator: id }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+            postModel.countDocuments({ creator: id })
+        ]);
 
         if (totalPosts === 0) {
             return res.status(200).json({
@@ -181,7 +191,7 @@ export const getSpecificUserPosts = async (req, res) => {
             message: "Error fetching user's posts, please try again!"
         });
     }
-}
+};
 
 export const editPost = async (req, res) => {
     const { id } = req.params;
@@ -210,7 +220,9 @@ export const editPost = async (req, res) => {
         }
 
         if (post.creator.toString() !== req.user.toString()) {
-            return res.status(403).json({ success: false, message: 'The post is not yours, you are not authorized to edit it!' });
+            return res
+                .status(403)
+                .json({ success: false, message: 'The post is not yours, you are not authorized to edit it!' });
         }
 
         if (!title && !caption && !tags && !location && !file) {
@@ -273,25 +285,48 @@ export const deletePost = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Invalid post id, please try again!' });
     }
 
+    const session = await mongoose.startSession();
+
     try {
-        const post = await postModel.findById(id);
+        session.startTransaction();
+
+        const post = await postModel.findById(id).session(session);
         if (!post) {
+            await session.abortTransaction();
             return res.status(404).json({ success: false, message: 'Post not found!' });
         }
 
-        if (post.creator.toString() !== req.user.toString()) {
-            return res.status(403).json({ success: false, message : 'The post is not yours, you are not authorized to delete it!'})
+        if (post.creator.toString() !== req.user._id.toString()) {
+            await session.abortTransaction();
+            return res
+                .status(403)
+                .json({ success: false, message: 'The post is not yours, you are not authorized to delete it!' });
         }
 
-        await deleteFile(post.fileUrl);
-        await postModel.findByIdAndDelete(id);
+        await postModel.findByIdAndDelete(id).session(session);
+        await userModel.findByIdAndUpdate(
+            req.user._id,
+            { $inc: { postsCount: -1 } },
+            { session }
+        );
+
+        await session.commitTransaction();
+
+        try {
+            await deleteFile(post.fileUrl);
+        } catch (fileError) {
+            console.error('Post deleted from DB but failed to delete file:', post.fileUrl, fileError);
+        }
 
         return res.status(200).json({ success: true, message: 'Post deleted successfully' });
     } catch (error) {
+        await session.abortTransaction();
         console.error('Error deleting post:', error);
         return res.status(500).json({
             success: false,
             message: 'Error deleting post, please try again!'
         });
+    } finally {
+        await session.endSession();
     }
 };
