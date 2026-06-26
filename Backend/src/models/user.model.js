@@ -15,8 +15,8 @@ const userSchema = new mongoose.Schema({
         required: [true, 'Email is required!'],
         unique: true,
         lowercase: true,
-        match: [/\S+@\S+\.\S+/, 'Invalid email address entered!'],
         trim: true,
+        match: [/\S+@\S+\.\S+/, 'Invalid email address entered!'],
         index: true
     },
     password: {
@@ -41,6 +41,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    postsCount: {
+        type: Number,
+        default: 0
+    },
     followersCount: {
         type: Number,
         default: 0
@@ -48,6 +52,10 @@ const userSchema = new mongoose.Schema({
     followingCount: {
         type: Number,
         default: 0
+    },
+    active: {
+        type: Boolean,
+        default: true
     }
 }, { timestamps: true });
 
