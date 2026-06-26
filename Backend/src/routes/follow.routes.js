@@ -1,6 +1,6 @@
 import express from "express";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
-import { followUser, unfollowUser, acceptFollowRequest, rejectFollowRequest, getFollowers, getFollowing, getFollowRequests } from "../controllers/follow.controller.js";
+import { followUser, unfollowUser, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing, getFollowRequests } from "../controllers/follow.controller.js";
 
 const followRouter = express.Router();
 
@@ -8,7 +8,7 @@ const followRouter = express.Router();
 followRouter.post('/:id', authMiddleware, followUser);
 followRouter.delete('/:id', authMiddleware, unfollowUser);
 followRouter.patch('/accept/:id', authMiddleware, acceptFollowRequest);
-followRouter.delete('/reject/:id', authMiddleware, rejectFollowRequest);
+followRouter.delete('/decline/:id', authMiddleware, declineFollowRequest);
 followRouter.get('/followers/:id', authMiddleware, getFollowers);
 followRouter.get('/following/:id', authMiddleware, getFollowing);
 followRouter.get('/requests', authMiddleware, getFollowRequests);
