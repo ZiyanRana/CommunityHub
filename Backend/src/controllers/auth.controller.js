@@ -2,19 +2,30 @@ import userModel from '../models/user.model.js';
 import otpModel from '../models/otp.model.js';
 import sessionModel from '../models/session.model.js';
 import { generateOTP, sendOtpEmail } from '../utils/otp.utils.js';
+import { getImageUrl } from '../services/imageKit.service.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { JWT_SECRET, REFRESH_TOKEN_EXPIRES_IN, ACCESS_TOKEN_EXPIRES_IN, COOKIE_EXPIRES_IN_DAYS, NODE_ENV, OTP_EXPIRES_IN_MINUTES } from '../config/env.js';
 import jwt from 'jsonwebtoken';
 
 export const register = async (req, res) => {
-    const { username, email, password } = req.body;
+    const { username, email, password, bio, isPrivate } = req.body;
+    const profilePhoto = req.file;
 
     if (!username || !email || !password) {
         return res.status(400).json({ success: false, message: 'Some required fields are missing!' });
     }
 
+    let profilePhotoUrl = '';
+
     try {
+        if (profilePhoto) {
+            if (!profilePhoto.mimetype.startsWith('image/')) {
+                return res.status(400).json({ success: false, message: 'Invalid profile photo, must be an image!' });
+            }
+            profilePhotoUrl = await getImageUrl(profilePhoto);
+        }
+
         const existingUser = await userModel.findOne({ $or: [{ username }, { email }] });
 
         if (existingUser) {
@@ -22,26 +33,34 @@ export const register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await userModel.create({ username, email, password: hashedPassword });
+        const newUser = await userModel.create({
+            username,
+            email,
+            password: hashedPassword,
+            profilePhoto: profilePhotoUrl,
+            bio: bio? bio : '',
+            isPrivate: isPrivate? true : false
+        });
+
+        const otp = generateOTP();
 
         try {
-            const otp = generateOTP();
             await sendOtpEmail(email, otp);
-
-            const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
-
-            await otpModel.create({
-                user: newUser._id,
-                email,
-                otp: otpHash,
-                purpose: 'verify',
-                expiresAt: new Date(Date.now() + Number(OTP_EXPIRES_IN_MINUTES) * 60 * 1000)
-            });
         } catch (error) {
             await userModel.deleteOne({ _id: newUser._id });
             console.error('Error sending OTP email:', error);
             return res.status(500).json({ success: false, message: 'An error occurred while sending the OTP email, please try again!' });
         }
+
+        const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+        await otpModel.create({
+            user: newUser._id,
+            email,
+            otp: otpHash,
+            purpose: 'verify',
+            expiresAt: new Date(Date.now() + Number(OTP_EXPIRES_IN_MINUTES) * 60 * 1000)
+        });
 
         return res.status(201).json({ success: true, message: 'User added and OTP is sent successfully, use it to verify your account!' });
     }
@@ -73,6 +92,10 @@ export const login = async (req, res) => {
 
         if (!user.verified) {
             return res.status(400).json({ success: false, message: 'Account not verified, please verify your account first!' });
+        }
+        if (!user.active) {
+            user.active = true;
+            await user.save();
         }
 
         const refreshToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
@@ -194,6 +217,15 @@ export const forgotPassword = async (req, res) => {
         await otpModel.deleteMany({ email, purpose: 'reset' });
 
         const otp = generateOTP();
+
+        try {
+            await sendOtpEmail(email, otp);
+        }
+        catch (error) {
+            console.error('Error sending email:', error);
+            return res.status(500).json({ success: false, message: 'An error occurred while sending the OTP email, please try again!' });
+        }
+
         const otpHash = await crypto.createHash('sha256').update(otp).digest('hex');
 
         await otpModel.create({
@@ -203,15 +235,6 @@ export const forgotPassword = async (req, res) => {
             purpose: 'reset',
             expiresAt: new Date(Date.now() + Number(OTP_EXPIRES_IN_MINUTES) * 60 * 1000)
         });
-
-        try {
-            await sendOtpEmail(email, otp);
-        }
-        catch (error) {
-            await otpModel.deleteMany({ email, purpose: 'reset' });
-            console.error('Error sending email:', error);
-            return res.status(500).json({ success: false, message: 'An error occurred while sending the OTP email, please try again!' });
-        }
 
         return res.status(200).json({ success: true, message: 'OTP to reset password has been sent successfully!' });
     } catch (error) {
@@ -250,6 +273,8 @@ export const resetPassword = async (req, res) => {
                 .json({ success: false, message: 'Cannot proceed, invalid OTP provided!' });
         }
 
+        await otpModel.deleteMany({ email, purpose: 'reset' });
+
         const newPasswordHash = await bcrypt.hash(newPassword, 10);
         if (newPasswordHash === user.password) {
             return res.status(400).json({ success: false, message: 'New password cannot be the same as the old password!' });
@@ -257,8 +282,6 @@ export const resetPassword = async (req, res) => {
 
         user.password = newPasswordHash;
         await user.save();
-
-        await otpModel.deleteMany({ email, purpose: 'reset' });
 
         await sessionModel.updateMany({
             user: user._id,
@@ -274,7 +297,7 @@ export const resetPassword = async (req, res) => {
             path: '/'
         });
 
-        return res.status(200).json({ success: true, message: 'Password reset successfully!' });
+        return res.status(200).json({ success: true, message: 'Password reset successfully, login with the new password!' });
     }
     catch (error) {
         console.error('Error in reset password:', error);
